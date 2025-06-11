@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulador de Partículas Flotantes</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: black;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        #controls {
+            margin-top: 10px;
+            z-index: 100;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        button {
+            padding: 10px 15px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 5px;
+            background-color: #007bff;
+            color: white;
+            transition: background-color 0.3s ease;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        #particleCountInput {
+            padding: 8px;
+            font-size: 16px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            width: 80px;
+            text-align: center;
+        }
+        canvas {
+            display: block;
+            background-color: black;
+            border: 1px solid #ccc;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <label for="particleCountInput">Número de partículas (20-700):</label>
+        <input type="number" id="particleCountInput" value="300" min="20" max="700">
+        <button id="startButton">Iniciar Simulación</button>
+        <button id="resetButton">Reiniciar Simulación</button>
+        <button id="pauseButton">Pausar</button>
+    </div>
+    <canvas id="particleCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('particleCanvas');
+        const ctx = canvas.getContext('2d');
+        const startButton = document.getElementById('startButton');
+        const resetButton = document.getElementById('resetButton');
+        const pauseButton = document.getElementById('pauseButton');
+        const particleCountInput = document.getElementById('particleCountInput');
+
+        let particles = [];
+        let animationFrameId;
+        let isPaused = false;
+
+        const colorTextures = {
+            red: '1z.jpeg',
+            blue: '2z.jpeg',
+            black: '3z.jpeg',
+            green: '4z.jpeg',
+            orange: '5z.jpeg'
+        };
+        const textures = {};
+        const colorNames = Object.keys(colorTextures);
+
+        function preloadTextures(callback) {
+            let loaded = 0;
+            for (const color in colorTextures) {
+                const img = new Image();
+                img.src = colorTextures[color];
+                img.onload = () => {
+                    const pattern = ctx.createPattern(img, 'repeat');
+                    textures[color] = pattern;
+                    loaded++;
+                    if (loaded === colorNames.length) callback();
+                };
+            }
+        }
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth * 0.9;
+            canvas.height = window.innerHeight * 0.8;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        class Particle {
+            constructor(x, y, radius, colorName) {
+                this.x = x;
+                this.y = y;
+                this.radius = radius;
+                this.colorName = colorName;
+                this.pattern = textures[colorName];
+                this.vx = (Math.random() - 0.5) * 0.5;
+                this.vy = (Math.random() - 0.5) * 0.5;
+                this.merged = false;
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.pattern;
+                ctx.fill();
+                ctx.closePath();
+            }
+
+            update() {
+                if (this.merged || isPaused) return;
+
+                this.x += this.vx;
+                this.y += this.vy;
+
+                if (this.x < 0 - this.radius) this.x = canvas.width + this.radius;
+                if (this.x > canvas.width + this.radius) this.x = 0 - this.radius;
+                if (this.y < 0 - this.radius) this.y = canvas.height + this.radius;
+                if (this.y > canvas.height + this.radius) this.y = 0 - this.radius;
+            }
+        }
+
+        function initParticles() {
+            cancelAnimationFrame(animationFrameId);
+            particles = [];
+            const totalParticles = parseInt(particleCountInput.value);
+
+            if (isNaN(totalParticles) || totalParticles < 20 || totalParticles > 700) {
+                alert("Por favor, introduce un número de partículas entre 20 y 700.");
+                return;
+            }
+
+            let remainingParticles = totalParticles;
+            const particlesPerColor = {};
+
+            for (let i = 0; i < colorNames.length; i++) {
+                const color = colorNames[i];
+                let count = (i === colorNames.length - 1) ? remainingParticles :
+                    Math.min(remainingParticles, Math.floor(Math.random() * (200 - 10 + 1)) + 10);
+                particlesPerColor[color] = count;
+                remainingParticles -= count;
+            }
+
+            if (remainingParticles > 0) {
+                const keys = Object.keys(particlesPerColor);
+                let index = 0;
+                while (remainingParticles > 0) {
+                    const color = keys[index % keys.length];
+                    if (particlesPerColor[color] < 200) {
+                        particlesPerColor[color]++;
+                        remainingParticles--;
+                    }
+                    index++;
+                }
+            }
+
+            for (const color of colorNames) {
+                const count = particlesPerColor[color];
+                for (let i = 0; i < count; i++) {
+                    const x = Math.random() * canvas.width;
+                    const y = Math.random() * canvas.height;
+                    particles.push(new Particle(x, y, 3, color));
+                }
+            }
+
+            animate();
+        }
+
+        function distance(p1, p2) {
+            const dx = p1.x - p2.x;
+            const dy = p1.y - p2.y;
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        function animate() {
+            animationFrameId = requestAnimationFrame(animate);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            for (let i = 0; i < particles.length; i++) {
+                const p1 = particles[i];
+                p1.update();
+                p1.draw();
+
+                for (let j = i + 1; j < particles.length; j++) {
+                    const p2 = particles[j];
+                    if (p1.colorName === p2.colorName && !p1.merged && !p2.merged) {
+                        const dist = distance(p1, p2);
+                        if (dist < p1.radius + p2.radius + 1) {
+                            const newRadius = Math.sqrt(p1.radius * p1.radius + p2.radius * p2.radius);
+                            const newX = (p1.x * p1.radius + p2.x * p2.radius) / (p1.radius + p2.radius);
+                            const newY = (p1.y * p1.radius + p2.y * p2.radius) / (p1.radius + p2.radius);
+                            const merged = new Particle(newX, newY, newRadius, p1.colorName);
+                            merged.vx = (p1.vx + p2.vx) / 2;
+                            merged.vy = (p1.vy + p2.vy) / 2;
+                            p1.merged = true;
+                            p2.merged = true;
+                            particles.push(merged);
+                        }
+                    }
+                }
+            }
+            particles = particles.filter(p => !p.merged);
+        }
+
+        startButton.addEventListener('click', () => preloadTextures(initParticles));
+        resetButton.addEventListener('click', () => {
+            cancelAnimationFrame(animationFrameId);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            particles = [];
+        });
+        pauseButton.addEventListener('click', () => {
+            isPaused = !isPaused;
+            pauseButton.textContent = isPaused ? 'Despausar' : 'Pausar';
+        });
+
+        preloadTextures(initParticles);
+    </script>
+</body>
+</html>
